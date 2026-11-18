@@ -15,3 +15,8 @@ def test_handler_returns_version_and_env(monkeypatch):
 def test_handler_returns_message():
     body = json.loads(app.handler({}, None)["body"])
     assert body["message"]
+
+
+def test_handler_uses_name():
+    body = json.loads(app.handler({"name": "miruky"}, None)["body"])
+    assert body["message"] == "こんにちは、mirukyさん"
