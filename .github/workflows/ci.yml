@@ -18,6 +18,7 @@ jobs:
         with:
           python-version: "3.13"
       # 版番号の計算とLambda関数の両方をテストします
-      - run: |
+      - name: テスト
+        run: |
           pip install -r requirements-dev.txt
           python -m pytest -q
