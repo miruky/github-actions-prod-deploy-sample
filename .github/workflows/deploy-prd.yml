@@ -69,6 +69,8 @@ jobs:
     with:
       environment: prd
       version: ${{ needs.prepare.outputs.tag }}
+    # 環境のシークレット（AWS_ROLE_ARN）を呼び出し先へ渡します
+    secrets: inherit
 
   publish:
     needs: [prepare, deploy]

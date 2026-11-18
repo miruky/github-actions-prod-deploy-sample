@@ -19,3 +19,5 @@ jobs:
     with:
       environment: stg
       version: stg-${{ github.sha }}
+    # 環境のシークレット（AWS_ROLE_ARN）を呼び出し先へ渡します
+    secrets: inherit

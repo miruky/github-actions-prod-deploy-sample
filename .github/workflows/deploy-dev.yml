@@ -19,3 +19,5 @@ jobs:
     with:
       environment: dev
       version: dev-${{ github.sha }}
+    # 環境のシークレット（AWS_ROLE_ARN）を呼び出し先へ渡します
+    secrets: inherit
