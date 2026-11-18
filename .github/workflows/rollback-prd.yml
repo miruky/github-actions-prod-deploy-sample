@@ -37,13 +37,15 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: OIDCでロールを引き受ける
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-1
           mask-aws-account-id: true
       # 今の向き先と、戻し先のタグに対応するLambdaの版を調べます
-      - id: target
+      - name: 戻し先の版を調べる
+        id: target
         run: |
           cur_ver=$(aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
             --query FunctionVersion --output text)
@@ -63,12 +65,13 @@ jobs:
           echo "現在: $cur_tag（版 $cur_ver） → 戻し先: $target（版 $ver）"
           echo "tag=$target" >> "$GITHUB_OUTPUT"
           echo "version=$ver" >> "$GITHUB_OUTPUT"
-      - run: |
+      - name: エイリアスを戻し先へ向ける
+        run: |
           aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
             --function-version "${{ steps.target.outputs.version }}" \
             --query FunctionVersion --output text
       # 戻した後も、エイリアス経由で版の名前を確かめます
-      - name: Smoke test
+      - name: エイリアス経由で版を確かめる
         run: |
           aws lambda invoke --function-name "$FUNCTION_NAME" --qualifier "$ALIAS_NAME" \
             --query FunctionError --output text out.json

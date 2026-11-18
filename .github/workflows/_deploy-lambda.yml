@@ -31,11 +31,13 @@ jobs:
         with:
           python-version: "3.13"
       # テストが通ったコードだけを固めます
-      - run: |
+      - name: テスト
+        run: |
           pip install -r requirements-dev.txt
           python -m pytest -q
       # 版の名前を同梱して、デプロイ用のzipを1回だけ作ります
-      - run: |
+      - name: zipを作る
+        run: |
           mkdir -p dist/pkg
           cp src/*.py dist/pkg/
           printf '%s\n' "${{ inputs.version }}" > dist/pkg/VERSION
@@ -66,19 +68,22 @@ jobs:
         with:
           name: function-zip
       # OIDCで、この環境のロールだけを引き受けます（長期のアクセスキーは使いません）
-      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+      - name: OIDCでロールを引き受ける
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ap-northeast-1
           mask-aws-account-id: true
       # 戻し先として、今エイリアスが指している版を控えておきます
-      - id: before
+      - name: 今の向き先を控える
+        id: before
         run: |
           prev=$(aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
             --query FunctionVersion --output text)
           echo "previous=$prev" >> "$GITHUB_OUTPUT"
           echo "デプロイ前のエイリアスの向き先: $prev"
-      - id: publish
+      - name: コードを更新して版を発行する
+        id: publish
         run: |
           aws lambda update-function-code --function-name "$FUNCTION_NAME" \
             --zip-file fileb://function.zip --query LastUpdateStatus --output text
@@ -87,12 +92,13 @@ jobs:
             --description "${{ inputs.version }}" --query Version --output text)
           echo "lambda_version=$ver" >> "$GITHUB_OUTPUT"
           echo "発行したLambdaの版: $ver（${{ inputs.version }}）"
-      - run: |
+      - name: エイリアスを新しい版へ向ける
+        run: |
           aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
             --function-version "${{ steps.publish.outputs.lambda_version }}" \
             --query FunctionVersion --output text
       # エイリアス経由で呼び出し、同梱した版の名前が返るかを確かめます
-      - name: Smoke test
+      - name: エイリアス経由で版を確かめる
         run: |
           aws lambda invoke --function-name "$FUNCTION_NAME" --qualifier "$ALIAS_NAME" \
             --query FunctionError --output text out.json
@@ -105,7 +111,7 @@ jobs:
           print("確認できた版:", body["version"])
           PY
       # 確かめに失敗したら、エイリアスを元の版へ戻します
-      - name: Roll back alias
+      - name: 失敗したらエイリアスを戻す
         if: failure() && steps.before.outputs.previous != ''
         run: |
           aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
