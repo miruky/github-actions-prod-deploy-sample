@@ -20,3 +20,9 @@ def test_handler_returns_message():
 def test_handler_uses_name():
     body = json.loads(app.handler({"name": "miruky"}, None)["body"])
     assert body["message"] == "こんにちは、mirukyさん"
+
+
+def test_handler_accepts_non_dict_event():
+    # テストの画面などから文字列や配列が渡されても落ちないこと
+    body = json.loads(app.handler(["x"], None)["body"])
+    assert body["message"] == "こんにちは、デプロイの見本です"
