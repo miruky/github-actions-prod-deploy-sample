@@ -6,7 +6,16 @@ import json
 import os
 from pathlib import Path
 
+from pydantic import BaseModel
+
 VERSION_FILE = Path(__file__).with_name("VERSION")
+
+
+class Greeting(BaseModel):
+    message: str
+    version: str
+    env: str
+    region: str
 
 
 def read_version() -> str:
@@ -25,4 +34,4 @@ def handler(event, context):
         "env": os.environ.get("APP_ENV", "local"),
         "region": os.environ.get("AWS_REGION", "local"),
     }
-    return {"statusCode": 200, "body": json.dumps(body, ensure_ascii=False)}
+    return {"statusCode": 200, "body": Greeting(**body).model_dump_json()}
