@@ -17,8 +17,10 @@ def read_version() -> str:
 
 
 def handler(event, context):
+    # 呼び出し元が name を渡したときは、あいさつに名前を入れます
+    name = (event or {}).get("name")
     body = {
-        "message": "こんにちは、デプロイの見本です",
+        "message": f"こんにちは、{name}さん" if name else "こんにちは、デプロイの見本です",
         "version": read_version(),
         "env": os.environ.get("APP_ENV", "local"),
     }
