@@ -26,3 +26,9 @@ def test_handler_accepts_non_dict_event():
     # テストの画面などから文字列や配列が渡されても落ちないこと
     body = json.loads(app.handler(["x"], None)["body"])
     assert body["message"] == "こんにちは、デプロイの見本です"
+
+
+def test_handler_returns_region(monkeypatch):
+    monkeypatch.setenv("AWS_REGION", "ap-northeast-1")
+    body = json.loads(app.handler({}, None)["body"])
+    assert body["region"] == "ap-northeast-1"
