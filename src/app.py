@@ -23,5 +23,6 @@ def handler(event, context):
         "message": f"こんにちは、{name}さん" if name else "こんにちは、デプロイの見本です",
         "version": read_version(),
         "env": os.environ.get("APP_ENV", "local"),
+        "region": os.environ.get("AWS_REGION", "local"),
     }
     return {"statusCode": 200, "body": json.dumps(body, ensure_ascii=False)}
