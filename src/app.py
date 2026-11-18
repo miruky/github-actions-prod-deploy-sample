@@ -16,11 +16,19 @@ def read_version() -> str:
     return "local"
 
 
+def greeting(name: str | None, lang: str) -> str:
+    # lang に en を渡すと英語であいさつします
+    if lang == "en":
+        return f"Hello, {name}" if name else "Hello from the deploy sample"
+    return f"こんにちは、{name}さん" if name else "こんにちは、デプロイの見本です"
+
+
 def handler(event, context):
     # 呼び出し元が name を渡したときは、あいさつに名前を入れます
     name = event.get("name") if isinstance(event, dict) else None
+    lang = event.get("lang", "ja") if isinstance(event, dict) else "ja"
     body = {
-        "message": f"こんにちは、{name}さん" if name else "こんにちは、デプロイの見本です",
+        "message": greeting(name, lang),
         "version": read_version(),
         "env": os.environ.get("APP_ENV", "local"),
         "region": os.environ.get("AWS_REGION", "local"),

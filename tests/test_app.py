@@ -32,3 +32,8 @@ def test_handler_returns_region(monkeypatch):
     monkeypatch.setenv("AWS_REGION", "ap-northeast-1")
     body = json.loads(app.handler({}, None)["body"])
     assert body["region"] == "ap-northeast-1"
+
+
+def test_handler_in_english():
+    body = json.loads(app.handler({"name": "miruky", "lang": "en"}, None)["body"])
+    assert body["message"] == "Hello, miruky"
