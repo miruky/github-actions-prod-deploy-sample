@@ -22,6 +22,7 @@ GitHub Actions から AWS Lambda へデプロイする見本です。dev と stg
 | `.github/release.yml` | 自動生成するリリースノートの分類 |
 | `scripts/next_version.py` | 最新のタグとリリースの種類から次の版番号を計算 |
 | `infra/` | AWS 側（OIDC プロバイダー、環境ごとのロール、Lambda 関数とエイリアス）を作るスクリプト |
+| `demo/env-typo` ブランチの `demo-env-typo.yml` | 環境名を `prod` と打ち間違えたときに、保護ルールのない環境が作られ、OIDC の `sub` が一致せずに止まる様子を確かめる見本 |
 
 ## AWS 側の前提
 
@@ -34,3 +35,7 @@ GitHub Actions から AWS Lambda へデプロイする見本です。dev と stg
 | 環境の変数 | `ALIAS_NAME` | エイリアスの名前 |
 
 ロールの ARN にはアカウント ID が入るので、公開リポジトリではシークレットに入れています。
+
+## 戻し方
+
+デプロイのジョブは、エイリアス経由の確かめに失敗すると、デプロイ前のバージョンへエイリアスを自動で戻します。公開済みのリリースへ戻したいときは、Actions の「Rollback Prd」を main で実行します。戻し先のタグを空にすると、今のリリースの1つ前へ戻します。
