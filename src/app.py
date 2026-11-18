@@ -18,7 +18,7 @@ def read_version() -> str:
 
 def handler(event, context):
     # 呼び出し元が name を渡したときは、あいさつに名前を入れます
-    name = (event or {}).get("name")
+    name = event.get("name") if isinstance(event, dict) else None
     body = {
         "message": f"こんにちは、{name}さん" if name else "こんにちは、デプロイの見本です",
         "version": read_version(),
