@@ -10,3 +10,8 @@ def test_handler_returns_version_and_env(monkeypatch):
     assert res["statusCode"] == 200
     assert body["env"] == "dev"
     assert body["version"]
+
+
+def test_handler_returns_message():
+    body = json.loads(app.handler({}, None)["body"])
+    assert body["message"]

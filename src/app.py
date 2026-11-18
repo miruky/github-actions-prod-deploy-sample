@@ -17,5 +17,9 @@ def read_version() -> str:
 
 
 def handler(event, context):
-    body = {"version": read_version(), "env": os.environ.get("APP_ENV", "local")}
+    body = {
+        "message": "こんにちは、デプロイの見本です",
+        "version": read_version(),
+        "env": os.environ.get("APP_ENV", "local"),
+    }
     return {"statusCode": 200, "body": json.dumps(body, ensure_ascii=False)}
