@@ -1,0 +1,40 @@
+# 環境名を打ち間違えたときに何が起きるかを確かめる見本です（このブランチへの push でだけ動きます）
+name: Demo Env Typo
+
+on:
+  push:
+    branches: [demo/env-typo]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # environment を付けないジョブの sub
+  without-environment:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: IDトークンの sub を表示する
+        run: |
+          # トークン本体は表示せず、中の sub だけを取り出します
+          token=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$token" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r '"sub: " + .sub'
+
+  # prd を prod と打ち間違えたジョブ
+  typo-environment:
+    runs-on: ubuntu-24.04
+    environment: prod
+    steps:
+      - name: IDトークンの sub を表示する
+        run: |
+          token=$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)
+          echo "$token" | cut -d. -f2 | tr '_-' '/+' | base64 -d 2>/dev/null | jq -r '"sub: " + .sub'
+      # リポジトリ全体のシークレットにロールのARNを置いていると、打ち間違えた環境でも値が入ります
+      - name: OIDCでロールを引き受ける
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          mask-aws-account-id: true
