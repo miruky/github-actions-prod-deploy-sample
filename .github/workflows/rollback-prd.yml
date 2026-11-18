@@ -1,0 +1,78 @@
+# 本番のエイリアスを、前に出したリリースの版へ戻します（ビルドもデプロイもしません）
+name: Rollback Prd
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 戻し先のタグ（空なら、今のリリースの1つ前）
+        required: false
+        type: string
+
+# Deploy Prd と同じグループに入れ、デプロイと戻しが同時に走らないようにします
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    runs-on: ubuntu-24.04
+    environment: prd
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      FUNCTION_NAME: ${{ vars.FUNCTION_NAME }}
+      ALIAS_NAME: ${{ vars.ALIAS_NAME }}
+      INPUT_TAG: ${{ inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          mask-aws-account-id: true
+      # 今の向き先と、戻し先のタグに対応するLambdaの版を調べます
+      - id: target
+        run: |
+          cur_ver=$(aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
+            --query FunctionVersion --output text)
+          cur_tag=$(aws lambda get-function-configuration --function-name "$FUNCTION_NAME" \
+            --qualifier "$cur_ver" --query Description --output text)
+          target="$INPUT_TAG"
+          if [ -z "$target" ]; then
+            target=$(git tag --list 'v*.*.*' --sort=-v:refname \
+              | awk -v cur="$cur_tag" 'found { print; exit } $0 == cur { found = 1 }')
+          fi
+          ver=$(aws lambda list-versions-by-function --function-name "$FUNCTION_NAME" \
+            --query "Versions[?Description=='${target}'].Version | [-1]" --output text)
+          if [ -z "$target" ] || [ "$ver" = "None" ]; then
+            echo "::error::戻し先の版が見つかりません（tag=${target:-なし}）"
+            exit 1
+          fi
+          echo "現在: $cur_tag（版 $cur_ver） → 戻し先: $target（版 $ver）"
+          echo "tag=$target" >> "$GITHUB_OUTPUT"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+      - run: |
+          aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
+            --function-version "${{ steps.target.outputs.version }}" \
+            --query FunctionVersion --output text
+      # 戻した後も、エイリアス経由で版の名前を確かめます
+      - name: Smoke test
+        run: |
+          aws lambda invoke --function-name "$FUNCTION_NAME" --qualifier "$ALIAS_NAME" \
+            --query FunctionError --output text out.json
+          cat out.json; echo
+          python3 - "${{ steps.target.outputs.tag }}" <<'PY'
+          import json, sys
+          body = json.loads(json.load(open("out.json"))["body"])
+          assert body["version"] == sys.argv[1], f"想定と違う版です: {body}"
+          print("確認できた版:", body["version"])
+          PY

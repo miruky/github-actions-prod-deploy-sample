@@ -1,0 +1,99 @@
+# 本番（prd）だけは自動で出さず、Actions の画面から main を選んで手動で実行します
+name: Deploy Prd
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: リリースの種類（版番号は自動で決まります）
+        required: true
+        type: choice
+        default: 通常リリース (minor)
+        options:
+          - 通常リリース (minor)
+          - 修正リリース (patch)
+          - 大規模リリース (major)
+
+# 本番のデプロイは1本ずつ。後から押した実行は、前の実行が終わるまで待ちます
+concurrency:
+  group: deploy-prd
+  cancel-in-progress: false
+  queue: max
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # 本番に出せるのは main だけです（環境 prd のデプロイブランチの制限でも止まります）
+      - name: Check branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::本番へは main ブランチからだけデプロイできます（選ばれたのは ${GITHUB_REF_NAME}）"
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # 選んだ種類と最新のタグから、次の版番号を決めます
+      - id: version
+        run: |
+          case "${{ inputs.release_type }}" in
+            *"(major)") type=major ;;
+            *"(minor)") type=minor ;;
+            *"(patch)") type=patch ;;
+          esac
+          latest=$(git tag --list 'v*.*.*' --sort=-v:refname | head -n 1)
+          tag=$(python3 scripts/next_version.py --type "$type" --latest "$latest")
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "前回のタグ: ${latest:-なし} → 今回のタグ: $tag（$type）"
+      # 公開前の下書きとして、リリースノートつきのリリースを作ります（タグはまだ作られません）
+      - run: |
+          gh release create "${{ steps.version.outputs.tag }}" --draft \
+            --target "$GITHUB_SHA" --title "${{ steps.version.outputs.tag }}" --generate-notes
+
+  deploy:
+    needs: prepare
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/_deploy-lambda.yml
+    with:
+      environment: prd
+      version: ${{ needs.prepare.outputs.tag }}
+
+  publish:
+    needs: [prepare, deploy]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # デプロイが成功したときだけ公開します。公開した時点でタグが作られます
+      - run: |
+          gh release edit "${{ needs.prepare.outputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+            --draft=false --latest
+          echo "公開しました: ${{ needs.prepare.outputs.tag }}（Lambdaの版 ${{ needs.deploy.outputs.lambda_version }}）"
+
+  discard-draft:
+    needs: [prepare, deploy]
+    if: failure() && needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # デプロイに失敗したら下書きを消し、次の実行で同じ版番号を使えるようにします
+      - run: |
+          gh release delete "${{ needs.prepare.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --yes
+          echo "下書きを削除しました: ${{ needs.prepare.outputs.tag }}"

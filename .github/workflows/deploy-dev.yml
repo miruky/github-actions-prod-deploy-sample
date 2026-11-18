@@ -1,0 +1,21 @@
+# develop へのpush（基本はマージ）で、dev 環境へ自動でデプロイします
+name: Deploy Dev
+
+on:
+  push:
+    branches: [develop]
+
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-lambda.yml
+    with:
+      environment: dev
+      version: dev-${{ github.sha }}

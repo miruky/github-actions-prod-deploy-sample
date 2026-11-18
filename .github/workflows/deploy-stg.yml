@@ -1,0 +1,21 @@
+# staging へのpush（基本はマージ）で、stg 環境へ自動でデプロイします
+name: Deploy Stg
+
+on:
+  push:
+    branches: [staging]
+
+concurrency:
+  group: deploy-stg
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/_deploy-lambda.yml
+    with:
+      environment: stg
+      version: stg-${{ github.sha }}

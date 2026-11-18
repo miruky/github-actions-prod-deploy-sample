@@ -1,0 +1,111 @@
+# dev、stg、prd の3つから呼ばれる、ビルドからデプロイまでの共通の手順です
+name: _deploy-lambda
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: デプロイ先の環境名（dev、stg、prd）
+        required: true
+        type: string
+      version:
+        description: 関数に同梱する版の名前（prd は v1.2.0 の形、dev と stg はコミットの短いSHA）
+        required: true
+        type: string
+    outputs:
+      lambda_version:
+        description: 今回発行したLambdaの版番号
+        value: ${{ jobs.deploy.outputs.lambda_version }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      # テストが通ったコードだけを固めます
+      - run: |
+          pip install -r requirements-dev.txt
+          python -m pytest -q
+      # 版の名前を同梱して、デプロイ用のzipを1回だけ作ります
+      - run: |
+          mkdir -p dist/pkg
+          cp src/*.py dist/pkg/
+          printf '%s\n' "${{ inputs.version }}" > dist/pkg/VERSION
+          (cd dist/pkg && zip -qr ../function.zip .)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: function-zip
+          path: dist/function.zip
+          retention-days: 7
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      lambda_version: ${{ steps.publish.outputs.lambda_version }}
+    env:
+      FUNCTION_NAME: ${{ vars.FUNCTION_NAME }}
+      ALIAS_NAME: ${{ vars.ALIAS_NAME }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: function-zip
+      # OIDCで、この環境のロールだけを引き受けます（長期のアクセスキーは使いません）
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
+          mask-aws-account-id: true
+      # 戻し先として、今エイリアスが指している版を控えておきます
+      - id: before
+        run: |
+          prev=$(aws lambda get-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
+            --query FunctionVersion --output text)
+          echo "previous=$prev" >> "$GITHUB_OUTPUT"
+          echo "デプロイ前のエイリアスの向き先: $prev"
+      - id: publish
+        run: |
+          aws lambda update-function-code --function-name "$FUNCTION_NAME" \
+            --zip-file fileb://function.zip --query LastUpdateStatus --output text
+          aws lambda wait function-updated-v2 --function-name "$FUNCTION_NAME"
+          ver=$(aws lambda publish-version --function-name "$FUNCTION_NAME" \
+            --description "${{ inputs.version }}" --query Version --output text)
+          echo "lambda_version=$ver" >> "$GITHUB_OUTPUT"
+          echo "発行したLambdaの版: $ver（${{ inputs.version }}）"
+      - run: |
+          aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
+            --function-version "${{ steps.publish.outputs.lambda_version }}" \
+            --query FunctionVersion --output text
+      # エイリアス経由で呼び出し、同梱した版の名前が返るかを確かめます
+      - name: Smoke test
+        run: |
+          aws lambda invoke --function-name "$FUNCTION_NAME" --qualifier "$ALIAS_NAME" \
+            --query FunctionError --output text out.json
+          cat out.json; echo
+          python3 - "${{ inputs.version }}" <<'PY'
+          import json, sys
+          res = json.load(open("out.json"))
+          body = json.loads(res["body"])
+          assert body["version"] == sys.argv[1], f"想定と違う版です: {body}"
+          print("確認できた版:", body["version"])
+          PY
+      # 確かめに失敗したら、エイリアスを元の版へ戻します
+      - name: Roll back alias
+        if: failure() && steps.before.outputs.previous != ''
+        run: |
+          aws lambda update-alias --function-name "$FUNCTION_NAME" --name "$ALIAS_NAME" \
+            --function-version "${{ steps.before.outputs.previous }}" \
+            --query FunctionVersion --output text
+          echo "エイリアスを版 ${{ steps.before.outputs.previous }} へ戻しました"
