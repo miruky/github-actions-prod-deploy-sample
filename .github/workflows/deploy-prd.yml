@@ -34,7 +34,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # 本番に出せるのは main だけです（環境 prd のデプロイブランチの制限でも止まります）
-      - name: Check branch
+      - name: main か確かめる
         if: github.ref != 'refs/heads/main'
         run: |
           echo "::error::本番へは main ブランチからだけデプロイできます（選ばれたのは ${GITHUB_REF_NAME}）"
@@ -44,7 +44,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       # 選んだ種類と最新のタグから、次の版番号を決めます
-      - id: version
+      - name: 次の版番号を決める
+        id: version
         run: |
           case "${{ inputs.release_type }}" in
             *"(major)") type=major ;;
@@ -56,7 +57,8 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "前回のタグ: ${latest:-なし} → 今回のタグ: $tag（$type）"
       # 公開前の下書きとして、リリースノートつきのリリースを作ります（タグはまだ作られません）
-      - run: |
+      - name: 下書きのリリースを作る
+        run: |
           gh release create "${{ steps.version.outputs.tag }}" --draft \
             --target "$GITHUB_SHA" --title "${{ steps.version.outputs.tag }}" --generate-notes
 
@@ -81,7 +83,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # デプロイが成功したときだけ公開します。公開した時点でタグが作られます
-      - run: |
+      - name: リリースを公開する
+        run: |
           gh release edit "${{ needs.prepare.outputs.tag }}" --repo "$GITHUB_REPOSITORY" \
             --draft=false --latest
           echo "公開しました: ${{ needs.prepare.outputs.tag }}（Lambdaの版 ${{ needs.deploy.outputs.lambda_version }}）"
@@ -96,6 +99,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       # デプロイに失敗したら下書きを消し、次の実行で同じ版番号を使えるようにします
-      - run: |
+      - name: 下書きを削除する
+        run: |
           gh release delete "${{ needs.prepare.outputs.tag }}" --repo "$GITHUB_REPOSITORY" --yes
           echo "下書きを削除しました: ${{ needs.prepare.outputs.tag }}"
