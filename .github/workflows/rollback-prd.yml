@@ -28,6 +28,9 @@ jobs:
     env:
       FUNCTION_NAME: ${{ vars.FUNCTION_NAME }}
       ALIAS_NAME: ${{ vars.ALIAS_NAME }}
+      # 同時実行の上限に当たったときも、AWS CLI に数回やり直させます
+      AWS_RETRY_MODE: adaptive
+      AWS_MAX_ATTEMPTS: "8"
       INPUT_TAG: ${{ inputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
